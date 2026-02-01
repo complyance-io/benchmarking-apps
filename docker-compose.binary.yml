@@ -1,0 +1,204 @@
+# Docker Compose - BINARY Compilation (Benchmarking)
+# Uses compiled binaries for fastest, most consistent performance
+# Best for: Production benchmarking, edge deployment, serverless
+
+version: '3.8'
+
+services:
+  # OTEL Stack
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.115.0
+    container_name: otel-collector
+    command:
+      - --config=/etc/otel-collector-config.yaml
+    volumes:
+      - ./config/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    networks:
+      - observability
+    depends_on:
+      - jaeger
+      - prometheus
+    restart: unless-stopped
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    container_name: jaeger
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - COLLECTOR_OTLP_HTTP_HOST_PORT=4318
+      - COLLECTOR_OTLP_GRPC_HOST_PORT=4317
+    ports:
+      - "16686:16686"
+    networks:
+      - observability
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - observability
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    container_name: grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+      - ./config/grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
+    ports:
+      - "3002:3000"
+    networks:
+      - observability
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  consul:
+    image: consul:1.19
+    container_name: consul
+    command: agent -server -ui -bootstrap-expect=1 -client=0.0.0.0
+    ports:
+      - "8500:8500"
+    volumes:
+      - consul-data:/consul/data
+    networks:
+      - observability
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    command: >
+      redis-server
+      --save 60 1
+      --loglevel warning
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - observability
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # Hono CSV Service - BINARY (default target = compiled binary)
+  # ============================================================================
+  hono-csv-service:
+    build:
+      context: ./hono-csv-service
+      dockerfile: Dockerfile
+      # No target = uses default (binary stage)
+    container_name: hono-csv-service
+    environment:
+      - SERVICE_NAME=csv-service-hono
+      - FRAMEWORK=hono
+      - BUILD_TYPE=binary
+      - PORT=3000
+      - GRPC_PORT=50051
+      - OTEL_ENABLED=true
+      - OTEL_COLLECTOR_ENDPOINT=http://otel-collector:4318
+      - CONSUL_ENABLED=true
+      - CONSUL_HOST=consul
+      - CONSUL_PORT=8500
+      - REDIS_ENABLED=true
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - JWT_SECRET=dev-secret-key
+      - JWT_ISSUER=csv-service
+      - CORS_ORIGINS=*
+      - RATE_LIMIT_MAX_REQUESTS=100
+    ports:
+      - "3000:3000"
+      - "50051:50051"
+    networks:
+      - observability
+    depends_on:
+      - otel-collector
+      - consul
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ============================================================================
+  # Elysia CSV Service - BINARY (default target = compiled binary)
+  # ============================================================================
+  elysia-csv-service:
+    build:
+      context: ./elysia-csv-service
+      dockerfile: Dockerfile
+      # No target = uses default (binary stage)
+    container_name: elysia-csv-service
+    environment:
+      - SERVICE_NAME=csv-service-elysia
+      - FRAMEWORK=elysia
+      - BUILD_TYPE=binary
+      - PORT=3000
+      - GRPC_PORT=50051
+      - OTEL_ENABLED=true
+      - OTEL_COLLECTOR_ENDPOINT=http://otel-collector:4318
+      - CONSUL_ENABLED=true
+      - CONSUL_HOST=consul
+      - CONSUL_PORT=8500
+      - REDIS_ENABLED=true
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - JWT_SECRET=dev-secret-key
+      - JWT_ISSUER=csv-service
+      - CORS_ORIGINS=*
+      - RATE_LIMIT_MAX_REQUESTS=100
+    ports:
+      - "3001:3000"
+      - "50052:50051"
+    networks:
+      - observability
+    depends_on:
+      - otel-collector
+      - consul
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  observability:
+    name: observability
+    driver: bridge
+
+volumes:
+  prometheus-data:
+  grafana-data:
+  consul-data:
+  redis-data:

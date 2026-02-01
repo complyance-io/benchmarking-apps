@@ -1,0 +1,79 @@
+# Prometheus Configuration
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'csv-services'
+    environment: 'local'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+# Rule files
+rule_files: []
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # OTEL Collector metrics
+  - job_name: 'otel-collector'
+    static_configs:
+      - targets: ['otel-collector:9464']
+    relabel_configs:
+      - source_labels: [job]
+        target_label: service_name
+        replacement: 'otel-collector'
+
+  # Hono CSV Service (standalone container)
+  - job_name: 'hono-csv-service'
+    static_configs:
+      - targets: ['hono-csv-service-min:3000']
+        labels:
+          framework: 'hono'
+          service: 'csv-service'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Elysia CSV Service (standalone container)
+  - job_name: 'elysia-csv-service'
+    static_configs:
+      - targets: ['elysia-csv-service-min:3000']
+        labels:
+          framework: 'elysia'
+          service: 'csv-service'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Consul
+  - job_name: 'consul'
+    static_configs:
+      - targets: ['consul:8500']
+    metrics_path: '/v1/agent/metrics'
+    params:
+      format: ['prometheus']
+
+  # cAdvisor - Container metrics (CPU, Memory, etc.)
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor-min:8080']
+    scrape_interval: 15s
+    relabel_configs:
+      # Extract container name from id label
+      - source_labels: [id]
+        regex: '/docker/([0-9a-f]+)'
+        target_label: container_id
+      - source_labels: [id]
+        regex: '/docker/([0-9a-f]{12})'
+        target_label: container_short_id
+
+  # Redis Exporter (if added)
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']

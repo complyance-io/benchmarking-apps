@@ -1,0 +1,31 @@
+{
+  "comparison": {
+    "hono_minified_vs_elysia_minified": {
+      "requests_per_second": {
+        "hono": 63.25,
+        "elysia": 64.27,
+        "winner": "elysia",
+        "difference_percent": 1.6
+      },
+      "p95_latency_ms": {
+        "hono": 15.73,
+        "elysia": 13.76,
+        "winner": "elysia",
+        "difference_percent": -12.5
+      },
+      "p99_latency_ms": {
+        "hono": 104.37,
+        "elysia": 67.39,
+        "winner": "elysia",
+        "difference_percent": -35.4
+      },
+      "avg_latency_ms": {
+        "hono": 9.57,
+        "elysia": 8.39,
+        "winner": "elysia",
+        "difference_percent": -12.3
+      }
+    },
+    "summary": "Elysia Minified shows slightly better performance than Hono Minified across all metrics. Both frameworks handle 1000-row CSV uploads efficiently with sub-15ms p95 latency."
+  }
+}

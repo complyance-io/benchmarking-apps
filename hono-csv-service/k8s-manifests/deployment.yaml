@@ -1,0 +1,504 @@
+# Kubernetes Manifests for Hono CSV Service
+# Apply with: kubectl apply -f k8s-manifests/
+
+---
+# Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: csv-services
+  labels:
+    name: csv-services
+    environment: production
+
+---
+# ConfigMap for application configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hono-csv-service-config
+  namespace: csv-services
+data:
+  SERVICE_NAME: "csv-service-hono"
+  SERVICE_VERSION: "1.0.0"
+  FRAMEWORK: "hono"
+  ENVIRONMENT: "production"
+  PORT: "3000"
+  GRPC_PORT: "50051"
+  OTEL_ENABLED: "true"
+  OTEL_COLLECTOR_ENDPOINT: "http://otel-collector:4318"
+  OTEL_TRACE_SAMPLE_RATIO: "0.1"
+  OTEL_METRICS_EXPORT_INTERVAL: "60000"
+  CONSUL_ENABLED: "true"
+  CONSUL_HOST: "consul-server"
+  CONSUL_PORT: "8500"
+  REDIS_ENABLED: "true"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+  MAX_FILE_SIZE: "104857600"
+  MAX_ROWS_PER_FILE: "1000000"
+  PROCESSING_TIMEOUT_MS: "300000"
+  CORS_ORIGINS: "https://example.com"
+  RATE_LIMIT_WINDOW_MS: "60000"
+  RATE_LIMIT_MAX_REQUESTS: "100"
+  ENABLE_CSP: "true"
+
+---
+# Secret for sensitive configuration
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hono-csv-service-secrets
+  namespace: csv-services
+type: Opaque
+stringData:
+  JWT_SECRET: "your-production-jwt-secret-key-change-me"
+  JWT_ISSUER: "csv-service"
+  REDIS_PASSWORD: ""
+  CONSUL_TOKEN: ""
+
+---
+# Service Account
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hono-csv-service
+  namespace: csv-services
+automountServiceAccountToken: false
+
+---
+# Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hono-csv-service
+  namespace: csv-services
+  labels:
+    app: hono-csv-service
+    version: v1
+    framework: hono
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: hono-csv-service
+  template:
+    metadata:
+      labels:
+        app: hono-csv-service
+        version: v1
+        framework: hono
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3000"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: hono-csv-service
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: hono-csv-service
+        image: your-registry/hono-csv-service:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 3000
+          protocol: TCP
+        - name: grpc
+          containerPort: 50051
+          protocol: TCP
+        env:
+        - name: SERVICE_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: hono-csv-service-config
+              key: SERVICE_NAME
+        - name: SERVICE_VERSION
+          valueFrom:
+            configMapKeyRef:
+              name: hono-csv-service-config
+              key: SERVICE_VERSION
+        - name: FRAMEWORK
+          valueFrom:
+            configMapKeyRef:
+              name: hono-csv-service-config
+              key: FRAMEWORK
+        - name: ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: hono-csv-service-config
+              key: ENVIRONMENT
+        - name: PORT
+          valueFrom:
+            configMapKeyRef:
+              name: hono-csv-service-config
+              key: PORT
+        - name: GRPC_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: hono-csv-service-config
+              key: GRPC_PORT
+        - name: OTEL_COLLECTOR_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: hono-csv-service-config
+              key: OTEL_COLLECTOR_ENDPOINT
+        - name: OTEL_TRACE_SAMPLE_RATIO
+          valueFrom:
+            configMapKeyRef:
+              name: hono-csv-service-config
+              key: OTEL_TRACE_SAMPLE_RATIO
+        - name: CONSUL_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: hono-csv-service-config
+              key: CONSUL_HOST
+        - name: CONSUL_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: hono-csv-service-config
+              key: CONSUL_PORT
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: hono-csv-service-config
+              key: REDIS_HOST
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: hono-csv-service-config
+              key: REDIS_PORT
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: hono-csv-service-secrets
+              key: JWT_SECRET
+        - name: JWT_ISSUER
+          valueFrom:
+            secretKeyRef:
+              name: hono-csv-service-secrets
+              key: JWT_ISSUER
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+        livenessProbe:
+          httpGet:
+            path: /live
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 0
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 30
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: cache
+          mountPath: /app/.cache
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: cache
+        emptyDir: {}
+
+---
+# HTTP Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: hono-csv-service
+  namespace: csv-services
+  labels:
+    app: hono-csv-service
+  annotations:
+    prometheus.io/scrape: "true"
+spec:
+  type: ClusterIP
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10800
+  ports:
+  - name: http
+    port: 80
+    targetPort: 3000
+    protocol: TCP
+  - name: https
+    port: 443
+    targetPort: 3000
+    protocol: TCP
+  selector:
+    app: hono-csv-service
+
+---
+# gRPC Service (headless for direct pod access)
+apiVersion: v1
+kind: Service
+metadata:
+  name: hono-csv-service-grpc
+  namespace: csv-services
+  labels:
+    app: hono-csv-service
+    service: grpc
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+  - name: grpc
+    port: 50051
+    targetPort: 50051
+    protocol: TCP
+  selector:
+    app: hono-csv-service
+
+---
+# HorizontalPodAutoscaler
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: hono-csv-service-hpa
+  namespace: csv-services
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: hono-csv-service
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 30
+      - type: Pods
+        value: 2
+        periodSeconds: 30
+      selectPolicy: Max
+
+---
+# PodDisruptionBudget
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: hono-csv-service-pdb
+  namespace: csv-services
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: hono-csv-service
+
+---
+# NetworkPolicy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hono-csv-service-netpol
+  namespace: csv-services
+spec:
+  podSelector:
+    matchLabels:
+      app: hono-csv-service
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow from ingress controller
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 3000
+  # Allow gRPC from other csv-services
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: csv-services
+    ports:
+    - protocol: TCP
+      port: 50051
+  # Allow from monitoring
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 3000
+  egress:
+  # Allow DNS
+  - to:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow OTEL collector
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 4318
+  # Allow Consul
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: consul
+    ports:
+    - protocol: TCP
+      port: 8500
+  # Allow Redis
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: databases
+    ports:
+    - protocol: TCP
+      port: 6379
+  # Allow external API calls
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80
+
+---
+# ServiceMonitor for Prometheus Operator
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: hono-csv-service
+  namespace: csv-services
+  labels:
+    app: hono-csv-service
+spec:
+  selector:
+    matchLabels:
+      app: hono-csv-service
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+  namespaceSelector:
+    matchNames:
+    - csv-services
+
+---
+# Ingress for external access
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hono-csv-service-ingress
+  namespace: csv-services
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-Content-Type-Options: nosniff";
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - csv-api.example.com
+    secretName: csv-service-tls
+  rules:
+  - host: csv-api.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: hono-csv-service
+            port:
+              number: 80

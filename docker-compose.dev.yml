@@ -1,0 +1,119 @@
+# Docker Compose - DEVELOPMENT (Hot Reload)
+# Uses development target with source mounting for live reload
+# Run with: docker-compose -f docker-compose.dev.yml up
+
+services:
+  # Minimal OTEL for development
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.114.0
+    command:
+      - --config=/etc/otel-collector-config.yaml
+    volumes:
+      - ./config/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    networks:
+      - dev
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - dev
+    restart: unless-stopped
+
+  consul:
+    image: consul:1.15
+    command: agent -server -ui -bootstrap-expect=1 -client=0.0.0.0
+    ports:
+      - "8500:8500"
+    networks:
+      - dev
+    restart: unless-stopped
+
+  # ============================================================================
+  # Hono - Development Mode with Hot Reload
+  # ============================================================================
+  hono-csv-service:
+    build:
+      context: ./hono-csv-service
+      dockerfile: Dockerfile
+      target: development  # Uses development stage with hot reload
+    container_name: hono-csv-service-dev
+    volumes:
+      - ./hono-csv-service/src:/app/src:ro  # Mount source for hot reload
+      - ./hono-csv-service/proto:/app/proto:ro
+    environment:
+      - SERVICE_NAME=csv-service-hono
+      - FRAMEWORK=hono
+      - BUILD_TYPE=development
+      - NODE_ENV=development
+      - PORT=3000
+      - GRPC_PORT=50051
+      - OTEL_ENABLED=true
+      - OTEL_COLLECTOR_ENDPOINT=http://otel-collector:4318
+      - CONSUL_ENABLED=true
+      - CONSUL_HOST=consul
+      - REDIS_ENABLED=true
+      - REDIS_HOST=redis
+      - JWT_SECRET=dev-secret-key
+      - JWT_ISSUER=csv-service
+      - CORS_ORIGINS=*
+      - RATE_LIMIT_MAX_REQUESTS=1000
+    ports:
+      - "3000:3000"
+      - "50051:50051"
+    networks:
+      - dev
+    depends_on:
+      - otel-collector
+      - redis
+      - consul
+    restart: unless-stopped
+
+  # ============================================================================
+  # Elysia - Development Mode with Hot Reload
+  # ============================================================================
+  elysia-csv-service:
+    build:
+      context: ./elysia-csv-service
+      dockerfile: Dockerfile
+      target: development  # Uses development stage with hot reload
+    container_name: elysia-csv-service-dev
+    volumes:
+      - ./elysia-csv-service/src:/app/src:ro  # Mount source for hot reload
+      - ./elysia-csv-service/proto:/app/proto:ro
+    environment:
+      - SERVICE_NAME=csv-service-elysia
+      - FRAMEWORK=elysia
+      - BUILD_TYPE=development
+      - NODE_ENV=development
+      - PORT=3000
+      - GRPC_PORT=50051
+      - OTEL_ENABLED=true
+      - OTEL_COLLECTOR_ENDPOINT=http://otel-collector:4318
+      - CONSUL_ENABLED=true
+      - CONSUL_HOST=consul
+      - REDIS_ENABLED=true
+      - REDIS_HOST=redis
+      - JWT_SECRET=dev-secret-key
+      - JWT_ISSUER=csv-service
+      - CORS_ORIGINS=*
+      - RATE_LIMIT_MAX_REQUESTS=1000
+    ports:
+      - "3001:3000"
+      - "50052:50051"
+    networks:
+      - dev
+    depends_on:
+      - otel-collector
+      - redis
+      - consul
+    restart: unless-stopped
+
+networks:
+  dev:
+    driver: bridge

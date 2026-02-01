@@ -1,0 +1,42 @@
+{
+  "service": "elysia-csv-service",
+  "build_type": "minified-runtime",
+  "framework": "elysia",
+  "runtime": "bun",
+  "timestamp": "2026-02-01T07:00:00Z",
+  "test_config": {
+    "max_vus": 100,
+    "test_duration": "1m40s",
+    "stages": [
+      {"duration": "10s", "target": 30},
+      {"duration": "20s", "target": 60},
+      {"duration": "30s", "target": 100},
+      {"duration": "30s", "target": 50},
+      {"duration": "10s", "target": 0}
+    ],
+    "endpoint": "/api/v1/import",
+    "file_rows": 1000
+  },
+  "results": {
+    "total_requests": 6439,
+    "success_rate": 100,
+    "requests_per_second": 64.27,
+    "latency": {
+      "avg_ms": 8.39,
+      "min_ms": 4.02,
+      "median_ms": 6.08,
+      "p90_ms": 10.89,
+      "p95_ms": 13.76,
+      "p99_ms": 67.39,
+      "max_ms": 192.76
+    },
+    "data_sent": "272 MB",
+    "data_received": "7.2 MB"
+  },
+  "thresholds": {
+    "error_rate": {"threshold": "< 5%", "actual": "0%", "passed": true},
+    "p95_latency": {"threshold": "< 1000ms", "actual": "13.76ms", "passed": true},
+    "p99_latency": {"threshold": "< 2000ms", "actual": "67.39ms", "passed": true},
+    "failure_rate": {"threshold": "< 1%", "actual": "0%", "passed": true}
+  }
+}

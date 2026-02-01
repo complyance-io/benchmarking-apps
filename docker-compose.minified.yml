@@ -1,0 +1,231 @@
+# Docker Compose - MINIFIED RUNTIME (Production Comparison)
+# Uses minified code with full Bun runtime
+# Best for: Traditional production deployment, full Bun feature access
+
+services:
+  # Minimal OTEL for comparison
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.114.0
+    container_name: otel-collector-min
+    command:
+      - --config=/etc/otel-collector-config.yaml
+    volumes:
+      - ./config/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4327:4317"
+      - "4328:4318"
+    networks:
+      - observability-min
+    depends_on:
+      - jaeger
+      - prometheus
+    restart: unless-stopped
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    container_name: jaeger-min
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - COLLECTOR_OTLP_HTTP_HOST_PORT=4318
+      - COLLECTOR_OTLP_GRPC_HOST_PORT=4317
+    ports:
+      - "16687:16686"
+    networks:
+      - observability-min
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: prometheus-min
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+      - --web.enable-remote-write-receiver
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-min-data:/prometheus
+    ports:
+      - "9091:9090"
+    networks:
+      - observability-min
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis-min
+    command: >
+      redis-server
+      --save 60 1
+      --loglevel warning
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    ports:
+      - "6380:6379"
+    networks:
+      - observability-min
+    restart: unless-stopped
+
+  consul:
+    image: consul:1.15
+    container_name: consul-min
+    command: agent -server -ui -bootstrap-expect=1 -client=0.0.0.0
+    ports:
+      - "8501:8500"
+    volumes:
+      - consul-min-data:/consul/data
+    networks:
+      - observability-min
+    restart: unless-stopped
+
+  # Loki - Log Aggregation
+  loki:
+    image: grafana/loki:3.2.0
+    container_name: loki-min
+    command:
+      - -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./config/loki-config.yaml:/etc/loki/local-config.yaml
+      - loki-min-data:/loki
+    ports:
+      - "3100:3100"
+    networks:
+      - observability-min
+    restart: unless-stopped
+
+  # Promtail - Log Collector
+  promtail:
+    image: grafana/promtail:2.9.0
+    container_name: promtail-min
+    command:
+      - -config.file=/etc/promtail/config.yml
+    volumes:
+      - ./config/promtail-config.yml:/etc/promtail/config.yml
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - observability-min
+    depends_on:
+      - loki
+    restart: unless-stopped
+
+  # Grafana - Visualization
+  grafana:
+    image: grafana/grafana:11.3.1
+    container_name: grafana-min
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3003
+    volumes:
+      - grafana-min-data:/var/lib/grafana
+    ports:
+      - "3003:3000"
+    networks:
+      - observability-min
+    depends_on:
+      - prometheus
+      - loki
+      - jaeger
+    restart: unless-stopped
+
+  # cAdvisor - Container Metrics
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.51.0
+    container_name: cadvisor-min
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    ports:
+      - "8081:8080"
+    networks:
+      - observability-min
+    restart: unless-stopped
+
+  # ============================================================================
+  # Hono CSV Service - MINIFIED RUNTIME
+  # ============================================================================
+  hono-csv-service:
+    build:
+      context: ./hono-csv-service
+      dockerfile: Dockerfile
+      target: runtime  # Uses minified runtime stage
+    container_name: hono-csv-service-min
+    environment:
+      - SERVICE_NAME=csv-service-hono
+      - FRAMEWORK=hono
+      - BUILD_TYPE=minified-runtime
+      - NODE_ENV=production
+      - PORT=3000
+      - OTEL_ENABLED=false
+      - CONSUL_ENABLED=false
+      - REDIS_ENABLED=false
+      - CORS_ORIGINS=*
+    ports:
+      - "3010:3000"
+      - "50054:50051"
+    networks:
+      - observability-min
+    depends_on:
+      - otel-collector
+      - redis
+      - consul
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ============================================================================
+  # Elysia CSV Service - MINIFIED RUNTIME
+  # ============================================================================
+  elysia-csv-service:
+    build:
+      context: ./elysia-csv-service
+      dockerfile: Dockerfile
+      target: runtime  # Uses minified runtime stage
+    container_name: elysia-csv-service-min
+    environment:
+      - SERVICE_NAME=csv-service-elysia
+      - FRAMEWORK=elysia
+      - BUILD_TYPE=minified-runtime
+      - NODE_ENV=production
+      - PORT=3000
+      - OTEL_ENABLED=false
+      - CONSUL_ENABLED=false
+      - REDIS_ENABLED=false
+      - CORS_ORIGINS=*
+    ports:
+      - "3011:3000"
+      - "50055:50051"
+    networks:
+      - observability-min
+    depends_on:
+      - otel-collector
+      - redis
+      - consul
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  observability-min:
+    name: observability-min
+    driver: bridge
+
+volumes:
+  prometheus-min-data:
+  consul-min-data:
+  loki-min-data:
+  grafana-min-data:

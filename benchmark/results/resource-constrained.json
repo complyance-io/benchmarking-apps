@@ -1,0 +1,43 @@
+{
+  "service": "elysia-csv-service",
+  "build_type": "minified-runtime",
+  "framework": "elysia",
+  "runtime": "bun",
+  "timestamp": "2026-02-01T07:10:00Z",
+  "resource_limits": {
+    "cpu": "500m",
+    "memory": "256Mi",
+    "memory_reservation": "128Mi"
+  },
+  "test_config": {
+    "max_vus": 100,
+    "test_duration": "1m40s",
+    "endpoint": "/api/v1/import",
+    "file_rows": 1000
+  },
+  "results": {
+    "total_requests": 6290,
+    "success_rate": 100,
+    "requests_per_second": 61.99,
+    "latency": {
+      "avg_ms": 26.77,
+      "min_ms": 4.14,
+      "median_ms": 7.16,
+      "p90_ms": 47.44,
+      "p95_ms": 63.13,
+      "p99_ms": 623.34,
+      "max_ms": 1162.57
+    }
+  },
+  "resource_utilization": {
+    "memory_used_mb": 58.92,
+    "memory_limit_mb": 256,
+    "memory_percent": 23.01,
+    "cpu_peak_percent": 49
+  },
+  "analysis": {
+    "p95_degradation_vs_unconstrained": "4.6x slower (63.13ms vs 13.76ms)",
+    "p99_degradation_vs_unconstrained": "9.2x slower (623ms vs 68ms)",
+    "conclusion": "CPU constraint significantly impacts tail latency"
+  }
+}

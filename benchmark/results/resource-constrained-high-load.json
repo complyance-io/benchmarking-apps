@@ -1,0 +1,43 @@
+{
+  "timestamp": "2026-02-01T08:17:00Z",
+  "test_config": {
+    "resource_limits": {
+      "cpu": "500m (0.5 cores)",
+      "memory": "128Mi",
+      "memory_reservation": "64Mi"
+    },
+    "load": {
+      "vus": 400,
+      "rate_per_service": "100 req/s",
+      "total_rate": "200 req/s",
+      "duration": "2 minutes"
+    }
+  },
+  "results": {
+    "total_iterations": 8331,
+    "dropped_iterations": 15669,
+    "success_rate": 100,
+    "requests_per_second": 61.32,
+    "latency": {
+      "avg_ms": 5350,
+      "min_ms": 27.22,
+      "median_ms": 4838,
+      "p90_ms": 7733,
+      "p95_ms": 9281,
+      "p99_ms": 13687
+    }
+  },
+  "resource_usage": {
+    "hono": {
+      "heap_used_mb": 11.8,
+      "rss_mb": 95.2,
+      "uptime_s": 526.8
+    },
+    "elysia": {
+      "heap_used_mb": 12.7,
+      "rss_mb": 107.0,
+      "uptime_s": 514.8
+    }
+  },
+  "conclusion": "With 500m CPU + 128Mi RAM constraints, the services struggled under 100 req/s load, resulting in high latency (~9s p95)."
+}

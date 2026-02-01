@@ -1,0 +1,282 @@
+# Docker Compose - BINARY COMPILATION (Default for Benchmarking)
+# Run with: docker-compose -f docker-compose.otel.yml up -d
+#
+# This is the main compose file using BINARY compilation for fair benchmarking
+#
+# Other available compose files:
+# - docker-compose.minified.yml → Minified runtime (traditional production)
+# - docker-compose.dev.yml → Development with hot reload
+
+services:
+  # ============================================================================
+  # OpenTelemetry Collector
+  # ============================================================================
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.114.0
+    container_name: otel-collector
+    command:
+      - --config=/etc/otel-collector-config.yaml
+    volumes:
+      - ./config/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
+      - "9464:9464"   # Prometheus exporter metrics
+      - "13133:13133" # Health check
+    networks:
+      - observability
+    depends_on:
+      - jaeger
+      - prometheus
+    restart: unless-stopped
+
+  # ============================================================================
+  # Jaeger - Distributed Tracing
+  # ============================================================================
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    container_name: jaeger
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - COLLECTOR_OTLP_HTTP_HOST_PORT=4318
+      - COLLECTOR_OTLP_GRPC_HOST_PORT=4317
+    ports:
+      - "5775:5775/udp"
+      - "6831:6831/udp"
+      - "6832:6832/udp"
+      - "5778:5778"
+      - "16686:16686"   # Jaeger UI
+      - "14268:14268"
+      - "14250:14250"
+      - "9411:9411"
+    networks:
+      - observability
+    restart: unless-stopped
+
+  # ============================================================================
+  # Prometheus - Metrics Storage
+  # ============================================================================
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.console.libraries=/usr/share/prometheus/console_libraries
+      - --web.console.templates=/usr/share/prometheus/consoles
+      - --web.enable-lifecycle
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - observability
+    restart: unless-stopped
+
+  # ============================================================================
+  # Grafana - Metrics Visualization
+  # ============================================================================
+  grafana:
+    image: grafana/grafana:11.3.1
+    container_name: grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+      - ./config/grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
+    ports:
+      - "3002:3000"  # Changed to avoid conflict
+    networks:
+      - observability
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  # ============================================================================
+  # Consul - Service Discovery
+  # ============================================================================
+  consul:
+    image: consul:1.15
+    container_name: consul
+    command: >
+      agent
+      -server
+      -ui
+      -bootstrap-expect=1
+      -client=0.0.0.0
+      -recursor=8.8.8.8
+    environment:
+      - CONSUL_BIND_INTERFACE=eth0
+    volumes:
+      - consul-data:/consul/data
+    ports:
+      - "8500:8500"   # HTTP API
+      - "8600:8600/udp" # DNS
+    networks:
+      - observability
+    restart: unless-stopped
+
+  # ============================================================================
+  # Redis - Rate Limiting & Caching
+  # ============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    command: >
+      redis-server
+      --save 60 1
+      --loglevel warning
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - observability
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # Redis Commander - Redis UI
+  # ============================================================================
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: redis-commander
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8081:8081"
+    networks:
+      - observability
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  # ============================================================================
+  # Loki - Log Aggregation
+  # ============================================================================
+  loki:
+    image: grafana/loki:3.2.0
+    container_name: loki
+    command:
+      - -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./config/loki-config.yaml:/etc/loki/local-config.yaml
+      - loki-data:/loki
+    ports:
+      - "3100:3100"
+    networks:
+      - observability
+    restart: unless-stopped
+
+  # ============================================================================
+  # Promtail - Log Collector
+  # ============================================================================
+  promtail:
+    image: grafana/promtail:2.9.0
+    container_name: promtail
+    command:
+      - -config.file=/etc/promtail/config.yml
+    volumes:
+      - ./config/promtail-config.yml:/etc/promtail/config.yml
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    networks:
+      - observability
+    depends_on:
+      - loki
+    restart: unless-stopped
+
+  # ============================================================================
+  # Hono CSV Service - BINARY (default target = compiled binary)
+  # ============================================================================
+  hono-csv-service:
+    build:
+      context: ./hono-csv-service
+      dockerfile: Dockerfile
+      target: binary-production  # Production binary with embedded Bun runtime
+    container_name: hono-csv-service
+    environment:
+      - SERVICE_NAME=csv-service-hono
+      - FRAMEWORK=hono
+      - BUILD_TYPE=binary
+      - NODE_ENV=production
+      - PORT=3000
+      - OTEL_ENABLED=false
+      - CONSUL_ENABLED=false
+      - REDIS_ENABLED=false
+      - CORS_ORIGINS=*
+    ports:
+      - "3000:3000"   # HTTP
+      - "50050:50051" # gRPC (host 50050 to avoid conflicts)
+    networks:
+      - observability
+    depends_on:
+      - otel-collector
+      - consul
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ============================================================================
+  # Elysia CSV Service - BINARY (default target = compiled binary)
+  # ============================================================================
+  elysia-csv-service:
+    build:
+      context: ./elysia-csv-service
+      dockerfile: Dockerfile
+      target: binary-production  # Production binary with embedded Bun runtime
+    container_name: elysia-csv-service
+    environment:
+      - SERVICE_NAME=csv-service-elysia
+      - FRAMEWORK=elysia
+      - BUILD_TYPE=binary
+      - NODE_ENV=production
+      - PORT=3000
+      - OTEL_ENABLED=false
+      - CONSUL_ENABLED=false
+      - REDIS_ENABLED=false
+      - CORS_ORIGINS=*
+    ports:
+      - "3001:3000"   # HTTP (container 3000, host 3001)
+      - "50052:50051" # gRPC (container 50051, host 50052)
+    networks:
+      - observability
+    depends_on:
+      - otel-collector
+      - consul
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  observability:
+    name: observability
+    driver: bridge
+
+volumes:
+  prometheus-data:
+  grafana-data:
+  consul-data:
+  redis-data:
+  loki-data:

@@ -1,0 +1,85 @@
+syntax = "proto3";
+
+package csvservice;
+
+option go_package = "./proto";
+
+// CSV Processing Service
+service CSVService {
+  // Process a CSV/Excel file and return aggregated results
+  rpc ProcessFile (ProcessFileRequest) returns (ProcessFileResponse);
+
+  // Health check for gRPC service
+  rpc HealthCheck (HealthCheckRequest) returns (HealthCheckResponse);
+
+  // Stream processing for large files
+  rpc ProcessFileStream (stream ProcessFileChunk) returns (stream ProcessFileProgress);
+}
+
+// Request to process a file
+message ProcessFileRequest {
+  bytes file_data = 1;
+  string file_type = 2; // "csv" or "xlsx"
+  string file_name = 3;
+  map<string, string> metadata = 4; // user_id, tenant_id, etc.
+}
+
+// Response with aggregated results
+message ProcessFileResponse {
+  int64 row_count = 1;
+  int64 success_count = 2;
+  int64 error_count = 3;
+  repeated RegionSummary summaries = 4;
+  ProcessingStats stats = 5;
+  string request_id = 6;
+}
+
+// Chunk for streaming large files
+message ProcessFileChunk {
+  bytes chunk_data = 1;
+  int32 chunk_index = 2;
+  bool is_last = 3;
+}
+
+// Progress update during streaming
+message ProcessFileProgress {
+  int32 processed_rows = 1;
+  int32 total_rows = 2;
+  string status = 3;
+  string message = 4;
+}
+
+// Regional summary aggregation
+message RegionSummary {
+  string region = 1;
+  string country = 2;
+  int64 count = 3;
+  double amount_sum = 4;
+  double amount_avg = 5;
+}
+
+// Processing statistics
+message ProcessingStats {
+  int64 parse_duration_ms = 1;
+  int64 validate_duration_ms = 2;
+  int64 aggregate_duration_ms = 3;
+  int64 total_duration_ms = 4;
+}
+
+// Health check request
+message HealthCheckRequest {
+  string service = 1;
+}
+
+// Health check response
+message HealthCheckResponse {
+  enum ServingStatus {
+    UNKNOWN = 0;
+    SERVING = 1;
+    NOT_SERVING = 2;
+    SERVICE_UNKNOWN = 3; // Used only by the Watch method.
+  }
+  ServingStatus status = 1;
+  string version = 2;
+  map<string, string> details = 3;
+}

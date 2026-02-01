@@ -1,0 +1,58 @@
+{
+  "name": "hono-csv-service",
+  "version": "1.0.0",
+  "description": "Production CSV/Excel processing microservice with Hono framework",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "bun run --hot src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target bun --minify && tsc --emitDeclarationOnly --outDir dist",
+    "start": "bun run dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "test": "bun test",
+    "proto:compile": "pbjs -t static-module -w commonjs -o src/rpc/csvservice_pb.js proto/csvservice.proto && pbts -o src/rpc/csvservice_pb.d.ts src/rpc/csvservice_pb.js",
+    "docker:build": "docker build -t hono-csv-service:latest .",
+    "docker:run": "docker run -p 3000:3000 -p 50051:50051 hono-csv-service:latest"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.12.4",
+    "@grpc/proto-loader": "^0.7.13",
+    "@hono/zod-validator": "^0.4.3",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/exporter-metrics-otlp-http": "^0.55.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.55.0",
+    "@opentelemetry/instrumentation": "^0.55.0",
+    "@opentelemetry/instrumentation-grpc": "^0.55.0",
+    "@opentelemetry/instrumentation-http": "^0.55.0",
+    "@opentelemetry/resources": "^1.28.0",
+    "@opentelemetry/sdk-metrics": "^1.28.0",
+    "@opentelemetry/sdk-node": "^0.55.0",
+    "@opentelemetry/sdk-trace-node": "^1.28.0",
+    "@opentelemetry/semantic-conventions": "^1.28.0",
+    "consul": "^2.0.0",
+    "hono": "^4.6.14",
+    "ioredis": "^5.4.2",
+    "jose": "^5.9.6",
+    "pino": "^9.6.0",
+    "xlsx": "^0.18.5",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.1.14",
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "bun": ">=1.1.0",
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "bun",
+    "hono",
+    "csv",
+    "grpc",
+    "otel",
+    "microservice"
+  ]
+}
